@@ -11,6 +11,9 @@ use winit::{
 };
 
 mod application;
+mod arcball;
+mod scene;
+mod texture;
 
 fn main() -> Result<()> {
     #[cfg(not(target_arch = "wasm32"))]
@@ -159,7 +162,7 @@ impl ApplicationHandler<UserEvent> for ApplicationWindow {
                         panic!("{}", e);
                     }
                 }
-            }
+            },
             _ => {}
         }
     }

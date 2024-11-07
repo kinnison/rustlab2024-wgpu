@@ -1,21 +1,4 @@
 /*
-Tasks:
-1. Bring colors to the screen by editing your fragment shader.
-2. Change the vertices of our two triangles so they cover the whole screen.
-3. Experiment with different colors based on the coordinates of a pixel.
-   You can, for example, create gradients by dividing the pixel's position
-   by the width/height of our surface. Unfortunately, we can't dynamically
-   access the width and height from our shaders yet, so you must use hardcoded
-   values, e.g.:
-     let width = 1280.0;
-     let height = 720.0;
-
-   You could also try plotting a function, by comparing the Y-coordinate against
-   the value of some f(x). Beware floating point accuracy, you will need some tolerance
-   in your comparisons.
-   The distance of your Y towards the real result could also be visualized by adjusting
-   the intensity of your returned color (the lower the components, the darker the color).
-
 If you have semantic or syntactical errors in your shader, the application will crash on launch.
 Scroll past the panic's stack trace to see the actual errors.
 
@@ -50,6 +33,9 @@ fn vs_main(
     return vec4<f32>(positions[in_vertex_index], 0.0, 1.0);
 }
 
+@group(0) @binding(0)
+var frame: texture_2d<f32>;
+
 @fragment
 fn fs_main(
     // When our triangles cover the whole surface, our fragment shader is called
@@ -60,11 +46,7 @@ fn fs_main(
     // You can access a vector's individual components as position.x, position.y, ...
     @builtin(position) position: vec4<f32>
 ) -> @location(0) vec4<f32> {
-    // We return a color value in RGBA format, where every component ranges from 0.0 to 1.0.
-    return vec4<f32>(
-        position.x / 1280.0,
-        position.y / 720.0,
-        1.0,
-        1.0
-    );
+    let x = i32(position.x);
+    let y = i32(position.y);
+    return textureLoad(frame, vec2<i32>(x, y), 0);
 }
