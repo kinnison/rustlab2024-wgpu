@@ -20,3 +20,7 @@ target/
 
 /target
 public/rustlab2024-wgpu*
+
+.direnv/
+.vscode/
+
