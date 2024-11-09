@@ -20,6 +20,19 @@ struct Camera {
     view_direction: vec4<f32>,
     up: vec4<f32>,
 }
+
+struct Sphere {
+    origin: vec3<f32>,
+    radius: f32,
+    color: vec4<f32>,
+}
+
+const scene: array<Sphere, 3> = array<Sphere, 3>(
+    Sphere(vec3<f32>(-0.5, 0.5, -1.0), 0.3, vec4<f32>(1.0, 0.0, 0.0, 1.0)),
+    Sphere(vec3<f32>(0.0, -0.5, -1.0), 0.6, vec4<f32>(0.0, 1.0, 0.0, 1.0)),
+    Sphere(vec3<f32>(0.5, 0.0, -1.0), 0.2, vec4<f32>(0.0, 0.0, 1.0, 1.0))
+);
+
 // The scene's camera is the second entry of our bind group, at index 1.
 // It is a uniform buffer as we only need to read and have no large size requirements.
 // An explanation of the difference between uniform and storage buffers can be found in
@@ -83,8 +96,8 @@ fn render(@builtin(global_invocation_id) gid: vec3<u32>) {
     // on the viewport.
     // Because the viewport's coordinates are not relative to one of the edges but to its center,
     // you must also subtract half of the viewport's width / height.
-    // let u = ...
-    // let v = ...
+    let u = ((x / width) * viewport_width) - (viewport_width / 2.0);
+    let v = ((y / height) * viewport_height) - (viewport_height / 2.0);
 
     // 2. Now we can finally compute the direction of our ray. All rays begin at the camera's
     // origin and then go through the desired pixel's position on the viewport.
@@ -97,42 +110,65 @@ fn render(@builtin(global_invocation_id) gid: vec3<u32>) {
     // To do this, add the viewport coordinate u multiplied by the viewport's right pointing
     // horizontal direction (to translate the offset into scene coordinates), and the viewport
     // coordinate v multiplied by the viewport's upwards pointing vertical direction.
-    // let dir = ...
+    let dir = (u * horizontal) + (v * vertical) + (focal_length * view_direction);
 
     // 3. Instead of calculating this static gradient as output color, call ray_color with the
     // camera's origin and the computed ray direction.
-    let color = vec4<f32>(x / width, y / height, 1.0, 1.0);
+    let color = ray_color(origin, dir);
 
     textureStore(frame, vec2<i32>(i32(gid.x), i32(gid.y)), color);
 }
 
-fn ray_color(origin: vec3<f32>, dir: vec3<f32>) -> vec4<f32> {
-    let unit_dir = normalize(dir);
-    let sphere_center = vec3<f32>(0.0, 0.0, -1.0);
-    let sphere_radius = 0.5;
-
-    var t = hit_sphere(sphere_center, sphere_radius, origin, unit_dir);
-    // A negative t means there was no solution, i.e., the ray does not intersect the sphere.
-    // A positive t is the distance from our camera to the hit point.
-
-    // Hit
-    if (t > 0.0) {
-        let hit_point = origin + unit_dir * t;
-        let sphere_coords = hit_point - sphere_center;
-
-        // N is the normal vector of the hit point on our sphere.
-        // Visualizing it as a color allows us to identify the different areas
-        // of the sphere.
-        let N = normalize(sphere_coords);
-        return 0.5 * vec4<f32>(N.x + 1, N.y + 1, N.z + 1, 1.0);
-    }
-
-    // No hit
-    // We use the unit vector of our ray to create some variance in the background color.
-    let a = 0.5 * (unit_dir.y + 1.0);
-    return ((1.0 - a) * vec4<f32>(1.0, 1.0, 1.0, 1.0) + a * vec4<f32>(0.5, 0.7, 1.0, 1.0));
+struct HitRecord {
+    sphere: i32,
+    pos: f32,
 }
 
+// Returns -1 if no hit
+fn try_hit(origin: vec3<f32>, unit_dir: vec3<f32>) -> HitRecord {
+    var t: f32 = -1.0;
+    var ret: i32 = -1;
+    
+    for (var i: i32 = 0; i < 3; i++) {
+     var hit = hit_sphere(scene[i].origin, scene[i].radius, origin, unit_dir);
+     if hit > 0.0 {
+        ret = i;
+        if t == -1.0 {
+            t = hit;
+        } else {
+            t = min(t, hit);
+        }
+     }
+    }
+    return HitRecord(ret, t);
+    
+}
+
+fn ray_color(origin: vec3<f32>, dir: vec3<f32>) -> vec4<f32> {
+    let unit_dir = normalize(dir);
+    var sphere_center = vec3<f32>(0.0, 0.0, -1.0);
+
+    let a = 0.5 * (unit_dir.y + 1.0);
+    var ray_color = ((1.0 - a) * vec4<f32>(1.0, 1.0, 1.0, 1.0) + a * vec4<f32>(0.5, 0.7, 1.0, 1.0));
+
+    var ray_origin = origin;
+    var ray_dir = dir;
+    var loops_left = 10;
+    loop {
+        let ray_unit_dir = normalize(ray_dir);
+        let hit_sphere = try_hit(ray_origin, ray_unit_dir);
+        loops_left -= 1;
+        if (hit_sphere.sphere < 0 || loops_left == 0) {
+            break;
+        }
+        ray_color = (ray_color + scene[hit_sphere.sphere].color) / 2.0;
+        let hit_point = ray_origin + ray_unit_dir * hit_sphere.pos;
+        let sphere_coords = hit_point - scene[hit_sphere.sphere].origin;
+        let N = normalize(sphere_coords);
+        ray_dir = ray_dir - 2 * dot(ray_dir, N) * N;
+    }
+    return ray_color;
+}
 
 fn hit_sphere(center: vec3<f32>, radius: f32, origin: vec3<f32>, dir: vec3<f32>) -> f32 {
     // 4. Determine if and where our ray (origin, dir) intersects with a sphere (center, radius).
@@ -144,5 +180,19 @@ fn hit_sphere(center: vec3<f32>, radius: f32, origin: vec3<f32>, dir: vec3<f32>)
     // An unsolvable square root (negative discriminant) means we have no intersection.
     // In this case, return -1.0.
 
-    return -1.0;
+    // Okay, so we're deciding if we hit the sphere, to do that, we need to do -b+-sqprt.....
+    let ofsphere = center - origin;
+    let c = dot(ofsphere, ofsphere) - (radius * radius);
+    let b = -2.0 * dot(dir, ofsphere);
+    let a = dot(dir, dir);
+    let disc = (b * b - 4.0 * a * c);
+    if (disc < 0.0) {
+        // Miss
+        return -1.0;
+    }
+    let rdisc = sqrt(disc);
+    let sol1 = (-b + rdisc) / (2.0 * a);
+    let sol2 = (-b - rdisc) / (2.0 * a);
+    //return min(sol1,sol2);
+    return sol2;
 }
