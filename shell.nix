@@ -13,8 +13,6 @@ pkgs.mkShell rec {
 
     pkg-config
     cmake
-    cargo
-    rustc
 
     libGL
     vulkan-headers
