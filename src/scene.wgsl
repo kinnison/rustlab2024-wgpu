@@ -165,6 +165,7 @@ fn ray_color(origin: vec3<f32>, dir: vec3<f32>) -> vec4<f32> {
         let hit_point = ray_origin + ray_unit_dir * hit_sphere.pos;
         let sphere_coords = hit_point - scene[hit_sphere.sphere].origin;
         let N = normalize(sphere_coords);
+        ray_origin = hit_point;
         ray_dir = ray_dir - 2 * dot(ray_dir, N) * N;
     }
     return ray_color;
